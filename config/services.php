@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'python_ads' => [
+        'url' => env('PYTHON_ADS_SERVICE_URL', 'http://127.0.0.1:6161'),
+    ],
+
 ];
