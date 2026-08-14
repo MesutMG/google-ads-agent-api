@@ -23,22 +23,17 @@
             <span v-if="!isLoading">Send</span>
             <span v-else class="spinner"></span>
           </button>
-
-          <button 
-            @click="testPrompt()" 
-            :disabled="isLoading || !prompt"
-            class="send-btn"
-          >
-            <span v-if="!isLoading">Send Test</span>
-            <span v-else class="spinner"></span>
-          </button>
         </div>
       </div>
 
       <div class="response-section">
         <h3 class="response-title">Analysis Output:</h3>
-        <div class="response-box" :class="{ 'loading-text': isLoading }">
-          {{ data }}
+        <!-- Replaced {{ data }} with v-html to render the parsed markdown -->
+        <div 
+          class="response-box" 
+          :class="{ 'loading-text': isLoading }"
+          v-html="parsedData"
+        >
         </div>
       </div>
     </div>
@@ -47,6 +42,7 @@
 
 <script>
 import axios from 'axios';
+import { marked } from 'marked';
 
 export default {
   name: "ads",
@@ -57,7 +53,14 @@ export default {
       isLoading: false,
     };
   },
-
+  computed: {
+    // This converts the raw markdown from OpenAI into styled HTML
+    parsedData() {
+      if (!this.data) return "";
+      // Parse the markdown. If it's just a loading string, it will render as a normal paragraph.
+      return marked(this.data);
+    }
+  },
   methods: {
     async sendPrompt() {
       if (!this.prompt.trim() || this.isLoading) return;
@@ -66,15 +69,21 @@ export default {
       this.data = "Analyzing your campaign data with OpenAI...";
 
       try {
-        const response = await axios.post('/api/app/analyze', {
-          prompt: this.prompt
-        });
+        const response = await axios.post('/api/app/analyze', 
+          JSON.stringify({ prompt: this.prompt }), 
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }
+        );
 
         this.data = response.data.answer || "No response content received.";
       } catch (error) {
         console.error("Error analyzing ads:", error);
-        this.data = error.response?.data?.error 
-          ? `Error: ${error.response.data.error}` 
+        this.data = error.response?.data?.message 
+          ? `Error: ${error.response.data.message}` 
           : "An error occurred while fetching the analysis. Please try again.";
       } finally {
         this.isLoading = false;
@@ -88,15 +97,21 @@ export default {
       this.data = "Analyzing your campaign data with OpenAI...";
 
       try {
-        const response = await axios.post('/api/app/test', {
-          prompt: this.prompt
-        });
+        const response = await axios.post('/api/app/test', 
+          JSON.stringify({ prompt: this.prompt }), 
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }
+        );
 
         this.data = response.data.answer || "No response content received.";
       } catch (error) {
         console.error("Error analyzing ads:", error);
-        this.data = error.response?.data?.error 
-          ? `Error: ${error.response.data.error}` 
+        this.data = error.response?.data?.message 
+          ? `Error: ${error.response.data.message}` 
           : "An error occurred while fetching the analysis. Please try again.";
       } finally {
         this.isLoading = false;
@@ -221,8 +236,35 @@ export default {
   color: #1e293b;
   font-size: 0.95rem;
   line-height: 1.6;
-  white-space: pre-wrap;
   min-height: 100px;
+}
+
+/* 
+  MARKDOWN STYLING 
+  We use :deep() so Vue applies these styles to the dynamically injected HTML elements from marked.
+*/
+.response-box :deep(p) {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.response-box :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.response-box :deep(ul) {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+.response-box :deep(li) {
+  margin-bottom: 0.25rem;
+}
+
+.response-box :deep(strong) {
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .loading-text {

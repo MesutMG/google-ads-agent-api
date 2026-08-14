@@ -2,3 +2,5 @@ config.json
 google-ads.yaml
 __pycache__/
 starting_code.zsh
+venv/
+client_secret.json
