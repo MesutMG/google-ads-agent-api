@@ -4,3 +4,6 @@ __pycache__/
 starting_code.zsh
 venv/
 client_secret.json
+service_account.json
+main_mcp.py
+GoogleAdsMCP/
