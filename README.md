@@ -21,7 +21,7 @@ Ensure you have the following installed on your system before proceeding:
 
 1. Clone the repository and navigate to the project root:
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/MesutMG/googleAdsAnalyzer
 cd googleAdsAnalyzer-bertramdev
 
 ```
@@ -78,7 +78,7 @@ uv pip install -r requirements.txt
 ```
 
 
-4. Configure your API credentials by copying the example configuration file:
+4. Configure  API credentials by copying the example configuration file:
 
 
 ```bash
@@ -87,17 +87,17 @@ cp config_example.json config.json
 ```
 
 
-5. Open `config.json` and fill in your Google Ads and OpenAI details:
+5. Open `config.json` and fill in  Google Ads and OpenAI details:
 
 
 ```json
 {
-    "developer_token": "YOUR_DEVELOPER_TOKEN",
-    "client_id": "YOUR_OAUTH_CLIENT_ID",
-    "client_secret": "YOUR_OAUTH_CLIENT_SECRET",
-    "refresh_token": "YOUR_OAUTH_REFRESH_TOKEN",
-    "login_customer_id": "YOUR_MCC_ID_IF_APPLICABLE",
-    "google_ads_customer_id": "YOUR_TARGET_CUSTOMER_ID",
+    "developer_token": "_DEVELOPER_TOKEN",
+    "client_id": "_OAUTH_CLIENT_ID",
+    "client_secret": "_OAUTH_CLIENT_SECRET",
+    "refresh_token": "_OAUTH_REFRESH_TOKEN",
+    "login_customer_id": "_MCC_ID_IF_APPLICABLE",
+    "google_ads_customer_id": "_TARGET_CUSTOMER_ID",
     "openai_api_key": "sk-proj-..."
 }
 
@@ -140,10 +140,10 @@ uvicorn main_mcp:app --reload --host 0.0.0.0 --port 6161
 
 ## Usage
 
-1. Open your browser and navigate to the local Laravel server (usually `[http://127.0.0.1:8000](http://127.0.0.1:8000)`).
+1. Open  browser and navigate to the local Laravel server (usually `[http://127.0.0.1:8000](http://127.0.0.1:8000)`).
 2. Use the UI to interact with the agent. You can ask natural language questions like: *"Ağustos ayındaki kampanyalarımın performansı nasıldı?"*
-3. The Laravel backend routes your prompt to the FastAPI server, which uses OpenAI to determine the correct Google Ads MCP tools to call.
-4. The AI iteratively queries your Google Ads account, fetches the live data, and returns a summarized markdown response to the frontend.
+3. The Laravel backend routes  prompt to the FastAPI server, which uses OpenAI to determine the correct Google Ads MCP tools to call.
+4. The AI iteratively queries  Google Ads account, fetches the live data, and returns a summarized markdown response to the frontend.
 
 ## Endpoints (FastAPI)
 
