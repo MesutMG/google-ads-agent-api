@@ -2,73 +2,101 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AdsAnalysisLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
 class AdsAnalysisController extends Controller
 {
-    /**
-     * Connects to main_mcp.py (FastAPI with the OpenAI Agent)
-     */
     public function analyze(Request $request) {
         $request->validate([
-            'prompt' => 'required|string|max:2000', // Increased slightly for detailed user prompts
+            'prompt' => 'required|string|max:2000',
         ]);
 
-        // Point to the new /chat endpoint defined in FastAPI
+        $prompt = $request->input('prompt');
         $serviceUrl = config('services.python_ads.url') . '/chat';
 
-        // High timeout is essential because the AI might execute multiple tools before answering
         $response = Http::timeout(120)->post($serviceUrl, [
-            'prompt' => $request->input('prompt'),
+            'prompt' => $prompt,
         ]);
 
         if ($response->failed()) {
+            AdsAnalysisLog::create([
+                'type'     => 'ai_chat',
+                'prompt'   => $prompt,
+                'response' => json_encode($response->json() ?? $response->body()),
+                'is_error' => true,
+            ]);
+
             return response()->json([
-                'error' => 'Failed to process ad analysis with AI. Error fetch in AdsAnalysisController.php',
+                'error'   => 'Failed to process ad analysis with AI.',
                 'details' => $response->json() ?? $response->body()
             ], $response->status() === 0 ? 500 : $response->status());
         }
 
+        $answer = $response->json('response');
+
+        // Store successful AI interaction
+        AdsAnalysisLog::create([
+            'type'     => 'ai_chat',
+            'prompt'   => $prompt,
+            'response' => $answer,
+            'is_error' => false,
+        ]);
+
         return response()->json([
-            'answer' => $response->json('response')
+            'answer' => $answer
         ]);
     }
 
-    /**
-     * Connects to main_mcp_noAI.py (Direct Tool Execution without AI)
-     * Useful if you want to bypass the AI and just pull raw JSON data using a tool name.
-     */
-    public function test_noAI(Request $request) {
+    public function test_noAI(Request $request)
+    {
         $request->validate([
             'tool_name' => 'required|string',
             'arguments' => 'nullable|array',
         ]);
 
-        // Points to the /execute-tool endpoint defined in your original script
+        $toolName = $request->input('tool_name');
+        $arguments = $request->input('arguments', []);
         $serviceUrl = config('services.python_ads.url') . '/execute-tool';
 
         $response = Http::timeout(60)->post($serviceUrl, [
-            'tool_name' => $request->input('tool_name'),
-            'arguments' => $request->input('arguments', []),
+            'tool_name' => $toolName,
+            'arguments' => $arguments,
         ]);
 
         if ($response->failed()) {
+            AdsAnalysisLog::create([
+                'type'      => 'tool_direct',
+                'tool_name' => $toolName,
+                'arguments' => $arguments,
+                'response'  => json_encode($response->json() ?? $response->body()),
+                'is_error'  => true,
+            ]);
+
             return response()->json([
-                'error'   => 'Failed to execute MCP test tool. Error fetch in AdsAnalysisController.php',
+                'error'   => 'Failed to execute MCP test tool.',
                 'details' => $response->json() ?? $response->body(),
             ], $response->status() === 0 ? 500 : $response->status());
         }
 
         $resultData = $response->json();
-
-        // Convert the returned data structure into a formatted JSON string or markdown block for display
         $formattedData = json_encode($resultData['data'] ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $answer = "```json\n" . $formattedData . "\n```";
+
+        // Store direct tool execution
+        AdsAnalysisLog::create([
+            'type'      => 'tool_direct',
+            'tool_name' => $toolName,
+            'arguments' => $arguments,
+            'response'  => $answer,
+            'is_error'  => $resultData['is_error'] ?? false,
+        ]);
 
         return response()->json([
-            'tool'     => $resultData['tool'] ?? $request->input('tool_name'),
+            'tool'     => $resultData['tool'] ?? $toolName,
             'is_error' => $resultData['is_error'] ?? false,
-            'answer'   => "```json\n" . $formattedData . "\n```",
+            'answer'   => $answer,
             'raw_data' => $resultData['data'] ?? [],
         ]);
     }
@@ -87,6 +115,15 @@ class AdsAnalysisController extends Controller
         return response()->json([
             'count' => $response->json('count'),
             'tools' => $response->json('tools')
+        ]);
+    }
+
+    public function history()
+    {
+        $logs = AdsAnalysisLog::latest()->take(50)->get();
+
+        return response()->json([
+            'history' => $logs
         ]);
     }
 }
