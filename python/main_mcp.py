@@ -1,143 +1,206 @@
 import os
 import json
-import datetime
+from typing import Any, Dict, Optional
+from datetime import datetime, date
+from contextlib import AsyncExitStack, asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from openai import OpenAI
+from openai import AsyncOpenAI
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-app = FastAPI()
+# -- DIRECTORY RESOLUTION & CONFIG --
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MCP_DIR = os.path.join(BASE_DIR, "GoogleAdsMCP") 
+CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+UV_BIN = "/Users/mesut/.local/bin/uv"
 
-with open("config.json", "r") as f:
+with open(CONFIG_PATH, "r") as f:
     config = json.load(f)
-with open("client_secret.json", "r") as f:
-    client_secret = json.load(f)
 
-openai_client = OpenAI(api_key=config["openai_api_key"])
 CUSTOMER_ID = config.get("google_ads_customer_id", "")
-PROJECT_ID = client_secret.get("project_id", "")
-DEVELOPER_TOKEN = config.get("developer_token", "")
 
-class ChatRequest(BaseModel):
-    user_prompt: str
+def get_mcp_server_params() -> StdioServerParameters:
+    server_env = os.environ.copy()
+    server_env["GOOGLE_ADS_DEVELOPER_TOKEN"] = config.get("developer_token", "")
+    server_env["GOOGLE_ADS_CLIENT_ID"] = config.get("client_id", "")
+    server_env["GOOGLE_ADS_CLIENT_SECRET"] = config.get("client_secret", "")
+    server_env["GOOGLE_ADS_REFRESH_TOKEN"] = config.get("refresh_token", "")
+    server_env["GOOGLE_ADS_LOGIN_CUSTOMER_ID"] = config.get("login_customer_id", "")
+    server_env["GOOGLE_ADS_CUSTOMER_ID"] = CUSTOMER_ID
 
-@app.post("/analyze-ads")
-async def analyze_ads(request: ChatRequest):
-    print(f"\n========== NEW REQUEST ==========")
-    print(f"User Prompt: {request.user_prompt}")
-    
-    yaml_path = os.path.abspath("google-ads.yaml")
-    server_env = dict(os.environ)
-    server_env["GOOGLE_ADS_CONFIGURATION_FILE_PATH"] = yaml_path
-    server_env["GOOGLE_CLOUD_PROJECT"] = PROJECT_ID
-    server_env["GOOGLE_ADS_DEVELOPER_TOKEN"] = DEVELOPER_TOKEN
-
-    server_params = StdioServerParameters(
-        command="python",
-        args=["-m", "ads_mcp.server"], 
+    return StdioServerParameters(
+        command=UV_BIN,
+        args=["run", "--directory", MCP_DIR, "google-ads-mcp"],
+        cwd=MCP_DIR,
         env=server_env
     )
 
-    try:
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                
-                mcp_tools = await session.list_tools()
-                print("Available Tools: ", [tool.name for tool in mcp_tools.tools])
-                openai_tools = [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": tool.inputSchema
-                        }
-                    }
-                    for tool in mcp_tools.tools
-                ]
-                
-                print(f"[MCP] Successfully loaded {len(openai_tools)} tools.")
+# --- GLOBAL PERSISTENT CONNECTION ---
+mcp_stack = AsyncExitStack()
+mcp_session: Optional[ClientSession] = None
 
-                system_prompt = (
-                    f"Sen uzman bir Google Ads analistisin. Bugünün tarihi {datetime.date.today().isoformat()}. "
-                    f"Analiz etmen gereken Google Ads Müşteri Kimliği: '{CUSTOMER_ID}'. "
-                    "ZORUNLU KURALLAR: "
-                    "1. Kullanıcı bir kampanya veya reklam grubu İSMİ verdiğinde (örn: 'Elmalı Reklam Grubu'), doğrudan bu metni ID bekleyen araçlara (tools) GİRME. "
-                    "2. Her zaman iki adımlı işlem yap: ÖNCE arama/sorgu aracını kullanarak bu ismin sayısal ID'sini (Resource Name veya ID) veritabanından bul. SONRA bulduğun bu sayısal ID'yi veya kaynak adını kullanarak anahtar kelimeleri/metrikleri sorgula. "
-                    "3. Canlı verileri sorgulamak için HER ZAMAN sana sunulan araçları kullan. "
-                    "4. Hata alırsan mazeret uydurma (özel karakterler vb. halüsinasyonlar yapma), farklı bir sorgu veya araç ile tekrar dene. "
-                    "5. Kullanıcıya asla 'bekle' veya 'zaman alacak' deme. "
-                    "6. Nihai veri özetini her zaman Türkçe olarak sun. Cevabının sonuna KESİNLİKLE 'Başka bir konuda yardımcı olabilir miyim?' gibi kapanış veya takip soruları ekleme."
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Boots the MCP server once when FastAPI starts and keeps it alive."""
+    global mcp_session
+    print("\n[SYSTEM] Booting up persistent Google Ads MCP Server process...")
+    try:
+        read, write = await mcp_stack.enter_async_context(stdio_client(get_mcp_server_params()))
+        mcp_session = await mcp_stack.enter_async_context(ClientSession(read, write))
+        await mcp_session.initialize()
+        print("[SYSTEM] MCP Server is running and ready for instant requests!\n")
+        yield
+    finally:
+        print("\n[SYSTEM] Shutting down MCP Server...")
+        await mcp_stack.aclose()
+
+# Initialize FastAPI with the persistent lifespan
+app = FastAPI(lifespan=lifespan)
+
+# --- Pydantic Models ---
+class ChatRequest(BaseModel):
+    prompt: str
+
+class DirectToolRequest(BaseModel):
+    tool_name: str
+    arguments: Optional[Dict[str, Any]] = None
+
+
+@app.post("/execute-tool")
+async def execute_tool(request: DirectToolRequest):
+    """Executes a specific MCP tool instantly using the persistent connection."""
+    tool_args = request.arguments or {}
+    
+    if "customer_id" not in tool_args and CUSTOMER_ID:
+        tool_args["customer_id"] = CUSTOMER_ID
+
+    try:
+        # Use the globally kept-alive session!
+        result = await mcp_session.call_tool(request.tool_name, arguments=tool_args)
+
+        formatted_data = []
+        for item in result.content:
+            text_val = getattr(item, "text", str(item))
+            try:
+                formatted_data.append(json.loads(text_val))
+            except (json.JSONDecodeError, TypeError):
+                formatted_data.append(text_val)
+
+        return {
+            "tool": request.tool_name,
+            "is_error": getattr(result, "isError", False),
+            "data": formatted_data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+SYSTEM_PROMPT = (
+    f"Sen uzman bir Google Ads analistisin. Bugünün tarihi {date.today().isoformat()}. "
+    f"Analiz etmen gereken Google Ads Müşteri Kimliği: '{CUSTOMER_ID}'. "
+    "ZORUNLU KURALLAR: "
+    "1. Kullanıcı bir kampanya veya reklam grubu İSMİ verdiğinde, doğrudan bu metni ID bekleyen araçlara GİRME. "
+    "2. Her zaman iki adımlı işlem yap: ÖNCE arama aracıyla sayısal ID'yi bul, SONRA bu ID ile metrikleri sorgula. "
+    "3. Canlı verileri sorgulamak için HER ZAMAN sana sunulan araçları kullan. "
+    "4. Hata alırsan mazeret uydurma, farklı bir sorgu veya araç ile tekrar dene. "
+    "5. Kullanıcıya asla 'bekle' veya 'kontrol ediyorum' diyerek aracı çağırmadan yanıt verme. Gerekli tüm araçları sırayla çağırıp analizi tamamla. "
+    "6. GENEL BİLGİ VERMEK YASAKTIR: Kullanıcı tahmin, öngörü veya strateji istediğinde (örn: 'önümüzdeki 1 yıl için tahmin yap'), ASLA sektör trendleri, yapay zeka veya gizlilik gibi jenerik makaleler yazma. Mutlaka hesabın geçmiş performans verilerini araçlarla çek ve YALNIZCA bu spesifik verilere dayanarak matematiksel bir tahmin yap. Veri yoksa tahmin yapamayacağını belirt. "
+    "7. PARA BİRİMİ VE MİKROS: API'den gelen bütçe, maliyet veya harcama verileri 'micros' cinsindendir. Bu değerleri her zaman 1.000.000'a bölerek normal birime çevir. Tüm parasal değerleri SADECE Türk Lirası (TL) formatında göster. ASLA Dolar ($) sembolü veya başka bir para birimi kullanma. Micros olarak da yazma."
+    "8. Nihai veri özetini her zaman Türkçe olarak sun. Cevabının sonuna KESİNLİKLE kapanış veya takip soruları ekleme."
+)
+
+@app.post("/chat")
+async def chat_with_agent(request: ChatRequest):
+    """Passes user prompt to OpenAI with multi-turn iterative tool calling."""
+    openai_client = AsyncOpenAI(api_key=config.get("openai_api_key", ""))
+
+    try:
+        # Instantly fetch tools using the live session
+        mcp_tools = await mcp_session.list_tools()
+        
+        openai_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.inputSchema
+                }
+            }
+            for t in mcp_tools.tools
+        ]
+
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": request.prompt}
+        ]
+        
+        max_iterations = 8  
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+            response = await openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                tools=openai_tools
+            )
+            
+            message = response.choices[0].message
+
+            if not message.tool_calls:
+                return {"response": message.content}
+
+            messages.append(message)
+
+            for tool_call in message.tool_calls:
+                tool_name = tool_call.function.name
+                args = json.loads(tool_call.function.arguments)
+
+                if "customer_id" not in args and CUSTOMER_ID:
+                    args["customer_id"] = CUSTOMER_ID
+
+                # Use live session
+                result = await mcp_session.call_tool(tool_name, arguments=args)
+
+                tool_result_text = "\n".join(
+                    [getattr(item, "text", str(item)) for item in result.content]
                 )
 
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": request.user_prompt}
-                ]
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result_text
+                })
 
-                # --- AGENT LOOP ---
-                # Allow the LLM up to 5 iterations to call tools and get data
-                MAX_ITERATIONS = 10
-                
-                for iteration in range(MAX_ITERATIONS):
-                    print(f"\n--- [LLM] Iteration {iteration + 1} ---")
-                    
-                    response = openai_client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=messages,
-                        tools=openai_tools if openai_tools else None,
-                        tool_choice="auto"
-                    )
-                    
-                    response_message = response.choices[0].message
-                    messages.append(response_message)
-
-                    # If no tools were called, the LLM has generated its final answer
-                    if not response_message.tool_calls:
-                        print(f"[LLM] Final Answer Generated:")
-                        print(f"{response_message.content}")
-                        return {"response": response_message.content}
-
-                    # Otherwise, execute the requested tools and loop again
-                    for tool_call in response_message.tool_calls:
-                        tool_name = tool_call.function.name
-                        tool_args = tool_call.function.arguments
-                        
-                        print(f"\n[MCP] ---> Executing Tool: {tool_name}")
-                        print(f"[MCP] ---> Arguments: {tool_args}")
-                        
-                        try:
-                            mcp_result = await session.call_tool(
-                                tool_name,
-                                arguments=json.loads(tool_args)
-                            )
-                            result_text = str(mcp_result.content)
-                            
-                            # Print a snippet of the result to the terminal so it doesn't flood your screen
-                            snippet = result_text[:300] + ("..." if len(result_text) > 300 else "")
-                            print(f"[MCP] <--- Result: {snippet}")
-                            
-                        except Exception as tool_error:
-                            result_text = f"Error executing tool: {tool_error}"
-                            print(f"[MCP] <--- ERROR: {result_text}")
-
-                        # Append the tool's result to the message history so the LLM can read it
-                        messages.append({
-                            "tool_call_id": tool_call.id,
-                            "role": "tool",
-                            "name": tool_name,
-                            "content": result_text,
-                        })
-                
-                # If it exceeds MAX_ITERATIONS
-                print("[Error] LLM exceeded maximum tool iterations.")
-                return {"response": "I encountered an error trying to fetch the data. Please try a more specific query."}
+        # Fallback if max iterations exceeded
+        final_fallback = await openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages
+        )
+        return {"response": final_fallback.choices[0].message.content}
 
     except Exception as e:
-        import traceback
-        print("\n--- CRITICAL ERROR ---")
-        traceback.print_exc()
-        print("----------------------\n")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/tools")
+async def list_available_tools():
+    """Lists all tools and parameter schemas exposed by the Google Ads MCP server."""
+    try:
+        mcp_tools = await mcp_session.list_tools()
+        return {
+            "count": len(mcp_tools.tools),
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.inputSchema,
+                }
+                for tool in mcp_tools.tools
+            ],
+        }
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
