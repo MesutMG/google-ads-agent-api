@@ -78,7 +78,6 @@ async def execute_tool(request: DirectToolRequest):
         tool_args["customer_id"] = CUSTOMER_ID
 
     try:
-        # Use the globally kept-alive session!
         result = await mcp_session.call_tool(request.tool_name, arguments=tool_args)
 
         formatted_data = []
@@ -101,16 +100,18 @@ async def execute_tool(request: DirectToolRequest):
 SYSTEM_PROMPT = (
     f"Sen uzman bir Google Ads analistisin. Bugünün tarihi {date.today().isoformat()}. "
     f"Analiz etmen gereken Google Ads Müşteri Kimliği: '{CUSTOMER_ID}'. "
-    "ZORUNLU KURALLAR: "
-    "1. Kullanıcı bir kampanya veya reklam grubu İSMİ verdiğinde, doğrudan bu metni ID bekleyen araçlara GİRME. "
-    "2. Her zaman iki adımlı işlem yap: ÖNCE arama aracıyla sayısal ID'yi bul, SONRA bu ID ile metrikleri sorgula. "
-    "3. Canlı verileri sorgulamak için HER ZAMAN sana sunulan araçları kullan. "
-    "4. Hata alırsan mazeret uydurma, farklı bir sorgu veya araç ile tekrar dene. "
-    "5. Kullanıcıya asla 'bekle' veya 'kontrol ediyorum' diyerek aracı çağırmadan yanıt verme. Gerekli tüm araçları sırayla çağırıp analizi tamamla. "
-    "6. GENEL BİLGİ VERMEK YASAKTIR: Kullanıcı tahmin, öngörü veya strateji istediğinde (örn: 'önümüzdeki 1 yıl için tahmin yap'), ASLA sektör trendleri, yapay zeka veya gizlilik gibi jenerik makaleler yazma. Mutlaka hesabın geçmiş performans verilerini araçlarla çek ve YALNIZCA bu spesifik verilere dayanarak matematiksel bir tahmin yap. Veri yoksa tahmin yapamayacağını belirt. "
-    "7. PARA BİRİMİ VE MİKROS: API'den gelen bütçe, maliyet veya harcama verileri 'micros' cinsindendir. Bu değerleri her zaman 1.000.000'a bölerek normal birime çevir. Tüm parasal değerleri SADECE Türk Lirası (TL) formatında göster. ASLA Dolar ($) sembolü veya başka bir para birimi kullanma. Micros olarak da yazma."
-    "8. Nihai veri özetini her zaman Türkçe olarak sun. Cevabının sonuna KESİNLİKLE kapanış veya takip soruları ekleme."
+    "Kurallar: "
+    "1. Yetki sınırı ve Read-Only kuralı: Sen yalnızca salt okunur (read-only) bir analiz asistanısın. Kampanya, reklam grubu, anahtar kelime veya bütçe oluşturma, düzenleme, silme veya güncelleme yetkin yoktur. Kullanıcı böyle bir talepte bulunursa hiçbir araç çağırma ve doğrudan 'Kampanya oluşturmak veya düzenlemek gibi bir yetkim yok, yalnızca analiz ve okuma (read-only) yapabilirim.' şeklinde net bir yanıt ver. "
+    "2. Kullanıcı bir kampanya veya reklam grubu ismi verdiğinde, doğrudan bu metni ID bekleyen araçlara girme. "
+    "3. Her zaman iki adımlı işlem yap: önce arama aracıyla sayısal ID'yi bul, sonra bu ID ile metrikleri sorgula. "
+    "4. Canlı verileri sorgulamak için her zaman sana sunulan araçları kullan. "
+    "5. Hata alırsan mazeret uydurma, farklı bir sorgu veya araç ile tekrar dene. "
+    "6. Kullanıcıya asla 'bekle' veya 'kontrol ediyorum' diyerek aracı çağırmadan yanıt verme. Gerekli tüm araçları sırayla çağırıp analizi tamamla. "
+    "7. Genel bilgi vermek yasaktır: yalnızca hesaptaki spesifik verilere dayanarak matematiksel tahmin yap. Jenerik sektör trendleri uydurma. "
+    "8. Para birimi kuralı: API'den dönen para birimi ne olursa olsun asla Dolar ($) sembolü kullanma. Değerleri 1.000.000'a bölerek sadece 'TL' veya '₺' olarak yaz. "
+    "9. Nihai veri özetini her zaman Türkçe olarak sun. Cevabının sonuna kapanış veya takip soruları ekleme."
 )
+
 
 @app.post("/chat")
 async def chat_with_agent(request: ChatRequest):
@@ -118,7 +119,6 @@ async def chat_with_agent(request: ChatRequest):
     openai_client = AsyncOpenAI(api_key=config.get("openai_api_key", ""))
 
     try:
-        # Instantly fetch tools using the live session
         mcp_tools = await mcp_session.list_tools()
         
         openai_tools = [
@@ -163,7 +163,6 @@ async def chat_with_agent(request: ChatRequest):
                 if "customer_id" not in args and CUSTOMER_ID:
                     args["customer_id"] = CUSTOMER_ID
 
-                # Use live session
                 result = await mcp_session.call_tool(tool_name, arguments=args)
 
                 tool_result_text = "\n".join(
@@ -176,7 +175,6 @@ async def chat_with_agent(request: ChatRequest):
                     "content": tool_result_text
                 })
 
-        # Fallback if max iterations exceeded
         final_fallback = await openai_client.chat.completions.create(
             model="gpt-4o",
             messages=messages
