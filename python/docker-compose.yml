@@ -1,0 +1,13 @@
+services:
+  ads-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ads-analyzer-backend
+    restart: unless-stopped
+    ports:
+      - "6161:6161"
+    volumes:
+      - ./config.json:/app/config.json:ro
+    environment:
+      - PYTHONUNBUFFERED=1
