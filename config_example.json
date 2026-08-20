@@ -2,7 +2,6 @@
   "openai_api_key": "OPENAI_API_KEY",
 
   "developer_token": "YOUR_DEVELOPER_TOKEN",
-  "service_account_path": "service_account.json",
   "google_ads_customer_id": "YOUR_CUSTOMER_ID",
 
   "impersonated_email": "user@yourdomain.com",

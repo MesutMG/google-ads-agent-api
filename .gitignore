@@ -3,4 +3,4 @@ __pycache__/
 venv/
 config.json
 GoogleAdsMCP/.git
-
+google-ads.yaml
