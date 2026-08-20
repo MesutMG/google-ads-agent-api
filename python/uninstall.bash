@@ -2,30 +2,16 @@
 #========== Deletes The Project ============
    #=====================================
 
+#!/usr/bin/env bash
 set -e
 
-CONTAINER_NAME="ads-analyzer-backend"
-IMAGE_NAME="google-ads-analyzer-python"
+echo "==> Stopping service and wiping all related containers, networks, and images..."
+docker compose down --volumes --rmi all --remove-orphans 2>/dev/null || true
 
-echo "==> Stopping and removing containers..."
-if command -v docker-compose &> /dev/null || docker compose version &> /dev/null; then
-    docker compose down --volumes --remove-orphans 2>/dev/null || true
-fi
+docker rm -f google-ads-agent-api 2>/dev/null || true
+docker rmi -f google-ads-agent-api 2>/dev/null || true
 
-# Fallback: force remove container by name if it still exists
-if [ "$(docker ps -aq -f name=^/${CONTAINER_NAME}$)" ]; then
-    docker rm -f "$CONTAINER_NAME"
-    echo "Removed container: $CONTAINER_NAME"
-fi
-
-echo "==> Removing image..."
-if [ "$(docker images -q "$IMAGE_NAME" 2> /dev/null)" ]; then
-    docker rmi -f "$IMAGE_NAME"
-    echo "Removed image: $IMAGE_NAME"
-fi
-
-echo "==> Pruning dangling Docker build cache and unused volumes..."
+echo "==> Pruning build caches..."
 docker builder prune -f
-docker volume prune -f
 
-echo "==> Docker cleanup complete."
+echo "==> Cleanup complete. Everything related to google-ads-agent-api has been removed."
