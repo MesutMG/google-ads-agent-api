@@ -1,9 +1,10 @@
 services:
-  ads-analyzer:
+  google-ads-agent-api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ads-analyzer-backend
+    image: google-ads-agent-api:latest
+    container_name: google-ads-agent-api
     restart: unless-stopped
     ports:
       - "6161:6161"
