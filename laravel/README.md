@@ -1,4 +1,3 @@
-
 # Google Ads Analyzer - Laravel Web Portal
 
 The frontend interface and operational backend for the Google Ads AI platform, built with **Laravel 11**, **Vue.js 3**, and **Tailwind CSS**.
@@ -17,32 +16,19 @@ The frontend interface and operational backend for the Google Ads AI platform, b
 ## Installation & Setup
 
 1. **Install Dependencies:**
-   ```bash
-   composer install
-   npm install
-
+```bash
+composer install
+npm install
 ```
 
 2. **Configure Environment:**
 ```bash
 cp .env.example .env
 php artisan key:generate
-
 ```
-
-
-3. **Configure Python Service Endpoint:**
-Ensure the following variable is defined in your `.env`:
-```env
-PYTHON_ADS_URL=[http://127.0.0.1:6161](http://127.0.0.1:6161)
-
-```
-
-
-4. **Run Database Migrations:**
+3. **Run Database Migrations:**
 ```bash
 php artisan migrate
-
 ```
 
 
@@ -59,15 +45,13 @@ php artisan serve
 
 # Terminal 2: Vite Dev Server
 npm run dev
-
 ```
 
-Alternatively, use the included starter script:
+Alternatively, use the starter script:
 
 ```bash
 chmod +x start.sh
 ./start.sh
-
 ```
 
 ---
@@ -78,10 +62,9 @@ To execute the daily automated account analysis command manually:
 
 ```bash
 php artisan ads:run-daily-analysis
-
 ```
 
-To run scheduled tasks continuously via cron, add this entry to your server's crontab:
+To run scheduled tasks continuously via cron, add this entry to your server's crontab (`crontab -e`):
 
 ```bash
 * * * * * cd /path-to-project/laravel && php artisan schedule:run >> /dev/null 2>&1
