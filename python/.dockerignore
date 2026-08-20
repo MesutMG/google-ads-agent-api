@@ -1,0 +1,16 @@
+.git
+.gitignore
+.gitattributes
+__pycache__
+venv/
+.venv/
+*.pyc
+*.log
+config.json
+
+GoogleAdsMCP/.env
+GoogleAdsMCP/.venv/
+GoogleAdsMCP/.pytest_cache/
+GoogleAdsMCP/.claude/
+GoogleAdsMCP/tests/
+GoogleAdsMCP/.git/
