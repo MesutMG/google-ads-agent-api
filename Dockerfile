@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the port Uvicorn runs on
+RUN pip install --no-cache-dir -e ./GoogleAdsMCP
 EXPOSE 6161
 
 # Command to run the FastAPI application
