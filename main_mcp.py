@@ -2,7 +2,7 @@ import os
 import json
 import shutil
 from datetime import date
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, List
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -17,16 +17,21 @@ MCP_DIR = os.path.join(BASE_DIR, "GoogleAdsMCP")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 UV_BIN = shutil.which("uv") or "uv"
 
-with open(CONFIG_PATH, "r") as f:
-    config = json.load(f)
+config: Dict[str, Any] = {}
+if os.path.exists(CONFIG_PATH):
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+def get_env_or_config(key: str, default: str = "") -> str:
+    return os.getenv(key.upper(), config.get(key, default))
 
 def get_mcp_server_params() -> StdioServerParameters:
     server_env = os.environ.copy()
-    server_env["GOOGLE_ADS_DEVELOPER_TOKEN"] = config.get("developer_token", "")
-    server_env["GOOGLE_ADS_CLIENT_ID"] = config.get("client_id", "")
-    server_env["GOOGLE_ADS_CLIENT_SECRET"] = config.get("client_secret", "")
-    server_env["GOOGLE_ADS_REFRESH_TOKEN"] = config.get("refresh_token", "")
-    server_env["GOOGLE_ADS_LOGIN_CUSTOMER_ID"] = config.get("login_customer_id", "")
+    server_env["GOOGLE_ADS_DEVELOPER_TOKEN"] = get_env_or_config("developer_token")
+    server_env["GOOGLE_ADS_CLIENT_ID"] = get_env_or_config("client_id")
+    server_env["GOOGLE_ADS_CLIENT_SECRET"] = get_env_or_config("client_secret")
+    server_env["GOOGLE_ADS_REFRESH_TOKEN"] = get_env_or_config("refresh_token")
+    server_env["GOOGLE_ADS_LOGIN_CUSTOMER_ID"] = get_env_or_config("login_customer_id")
 
     return StdioServerParameters(
         command=UV_BIN,
@@ -35,77 +40,62 @@ def get_mcp_server_params() -> StdioServerParameters:
         env=server_env
     )
 
-# --- GLOBAL PERSISTENT CONNECTION ---
+# --- GLOBAL MCP SESSION & OPENAI CLIENT ---
 mcp_stack = AsyncExitStack()
 mcp_session: Optional[ClientSession] = None
+cached_openai_tools: List[Dict[str, Any]] = []
+openai_client: Optional[AsyncOpenAI] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Boots the MCP server once when FastAPI starts and keeps it alive."""
-    global mcp_session
-    print("\n[SYSTEM] Booting up persistent Google Ads MCP Server process...")
+    global mcp_session, cached_openai_tools, openai_client
+
+    openai_api_key = get_env_or_config("openai_api_key")
+    if not openai_api_key:
+        raise RuntimeError("OpenAI API Key is missing.")
+    openai_client = AsyncOpenAI(api_key=openai_api_key)
+
     try:
         read, write = await mcp_stack.enter_async_context(stdio_client(get_mcp_server_params()))
         mcp_session = await mcp_stack.enter_async_context(ClientSession(read, write))
         await mcp_session.initialize()
-        print("[SYSTEM] MCP Server is running and ready for instant requests!\n")
+
+        tools_response = await mcp_session.list_tools()
+        cached_openai_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description or "",
+                    "parameters": t.inputSchema
+                }
+            }
+            for t in tools_response.tools
+        ]
         yield
     finally:
-        print("\n[SYSTEM] Shutting down MCP Server...")
         await mcp_stack.aclose()
+        if openai_client:
+            await openai_client.close()
 
-# Initialize FastAPI with the persistent lifespan
 app = FastAPI(lifespan=lifespan)
 
 # --- Pydantic Models ---
+class Message(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
-    prompt: str
     account_no: Union[str, int]
-
-class DirectToolRequest(BaseModel):
-    tool_name: str
-    account_no: Union[str, int]
-    arguments: Optional[Dict[str, Any]] = None
-
-
-@app.post("/execute-tool")
-async def execute_tool(request: DirectToolRequest):
-    """Executes a specific MCP tool instantly using the persistent connection."""
-    if not mcp_session:
-        raise HTTPException(status_code=503, detail="MCP Server session is not initialized.")
-
-    tool_args = dict(request.arguments) if request.arguments else {}
-    
-    # Inject account/customer id if expected by tool schema
-    tool_args.setdefault("customer_id", str(request.account_no))
-
-    try:
-        result = await mcp_session.call_tool(request.tool_name, arguments=tool_args)
-
-        formatted_data = []
-        for item in result.content:
-            text_val = getattr(item, "text", str(item))
-            try:
-                formatted_data.append(json.loads(text_val))
-            except (json.JSONDecodeError, TypeError):
-                formatted_data.append(text_val)
-
-        return {
-            "tool": request.tool_name,
-            "is_error": getattr(result, "isError", False),
-            "data": formatted_data
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    messages: List[Message]
 
 @app.post("/chat")
 async def chat_with_agent(request: ChatRequest):
-    """Passes user prompt to OpenAI with multi-turn iterative tool calling."""
-    if not mcp_session:
-        raise HTTPException(status_code=503, detail="MCP Server session is not initialized.")
-
-    openai_client = AsyncOpenAI(api_key=config.get("openai_api_key", ""))
+    if not mcp_session or not openai_client:
+        raise HTTPException(
+            status_code=503, 
+            detail="MCP Server session is not initialized."
+        )
 
     SYSTEM_PROMPT = (
         f"Sen uzman bir Google Ads analistisin. Bugünün tarihi {date.today().isoformat()}. "
@@ -123,87 +113,52 @@ async def chat_with_agent(request: ChatRequest):
         "10. HTML Format Kuralı: Yanıtında markdown sözdizimi (#, ##, **, *, _, -) veya html kod bloğu kullanma. Yanıtını doğrudan HTML etiketleri (<h3>, <h4>, <p>, <strong>, <ul>, <li>, <table class='table table-bordered'> vb.) ile formatlayarak saf HTML döndür."
     )
 
-    try:
-        mcp_tools = await mcp_session.list_tools()
-        
-        openai_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description or "",
-                    "parameters": t.inputSchema
-                }
-            }
-            for t in mcp_tools.tools
-        ]
+    messages_context: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for msg in request.messages:
+        messages_context.append({"role": msg.role, "content": msg.content})
 
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": request.prompt}
-        ]
-        
-        max_iterations = 8  
-        iteration = 0
+    max_iterations = 8
 
-        while iteration < max_iterations:
-            iteration += 1
+    for _ in range(max_iterations):
+        try:
             response = await openai_client.chat.completions.create(
                 model="gpt-4o",
-                messages=messages,
-                tools=openai_tools
+                messages=messages_context,
+                tools=cached_openai_tools or None
             )
-            
-            message = response.choices[0].message
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"OpenAI completion error: {str(e)}")
 
-            if not message.tool_calls:
-                return {"response": message.content}
+        choice = response.choices[0]
+        message = choice.message
 
-            messages.append(message)
+        if not message.tool_calls:
+            return {"response": message.content}
 
-            for tool_call in message.tool_calls:
-                tool_name = tool_call.function.name
+        messages_context.append(message.model_dump(exclude_none=True))
+
+        for tool_call in message.tool_calls:
+            tool_name = tool_call.function.name
+            try:
                 args = json.loads(tool_call.function.arguments)
+                args.setdefault("customer_id", str(request.account_no))
 
                 result = await mcp_session.call_tool(tool_name, arguments=args)
 
                 tool_result_text = "\n".join(
                     [getattr(item, "text", str(item)) for item in result.content]
                 )
+            except Exception as err:
+                tool_result_text = f"Tool Execution Error ({tool_name}): {str(err)}"
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": tool_result_text
-                })
+            messages_context.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": tool_result_text
+            })
 
-        final_fallback = await openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages
-        )
-        return {"response": final_fallback.choices[0].message.content}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/tools")
-async def list_available_tools():
-    """Lists all tools and parameter schemas exposed by the Google Ads MCP server."""
-    if not mcp_session:
-        raise HTTPException(status_code=503, detail="MCP Server session is not initialized.")
-    try:
-        mcp_tools = await mcp_session.list_tools()
-        return {
-            "count": len(mcp_tools.tools),
-            "tools": [
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.inputSchema,
-                }
-                for tool in mcp_tools.tools
-            ],
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    final_fallback = await openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages_context
+    )
+    return {"response": final_fallback.choices[0].message.content}
