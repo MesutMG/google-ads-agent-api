@@ -124,7 +124,7 @@ async def chat_with_agent(request: ChatRequest):
         "5. Hata alırsan mazeret uydurma, farklı bir sorgu veya araç ile tekrar dene. "
         "6. Kullanıcıya asla 'bekle' veya 'kontrol ediyorum' diyerek aracı çağırmadan yanıt verme. Gerekli tüm araçları sırayla çağırıp analizi tamamla. "
         "7. Genel bilgi vermek yasaktır: yalnızca hesaptaki spesifik verilere dayanarak matematiksel tahmin yap. Jenerik sektör trendleri uydurma. "
-        "8. Para birimi kuralı: API'den gelen 'cost_micros' ve 'average_cpc' değerleri micros formatındadır. Bu değerleri tam olarak 1.000.000'a (bir milyona) bölerek TL cinsine çevir. Örnek: 848454780 micros = 848.45 TL (0.85 TL değil), 719984780 micros = 719.98 TL (0.72 TL değil). Asla 1 milyara veya 100 milyona bölme. Ayrıca bu formatı kullan: 1.234.567,89"
+        "8. Para birimi kuralı: API'den gelen 'cost_micros' ve 'average_cpc' değerleri micros formatındadır. Bu değerleri tam olarak 1.000.000'a (bir milyona) bölerek TL cinsine çevir. Örnek: 848454780 micros = 848.45 TL (0.85 TL değil), 719984780 micros = 719.98 TL (0.72 TL değil). Asla 1 milyara veya 100 milyona bölme. Ayrıca bu formatı kullan: 1.234.567,89 virgülden sonra her zaman 2 rakam kullan."
         "9. Nihai veri özetini her zaman Türkçe olarak sun. Cevabının sonuna kapanış veya takip soruları ekleme. "
         "10. HTML Format Kuralı: Yanıtında markdown sözdizimi (#, ##, **, *, _, -) veya html kod bloğu kullanma. Yanıtını doğrudan HTML etiketleri (<h3>, <h4>, <p>, <strong>, <ul>, <li>, <table class='table table-bordered'> vb.) ile formatlayarak saf HTML döndür."
     )

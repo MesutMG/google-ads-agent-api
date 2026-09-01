@@ -79,7 +79,6 @@ def get_campaign_performance(
                 campaign.name,
                 campaign.status,
                 campaign.advertising_channel_type,
-                segments.date,
                 metrics.impressions,
                 metrics.clicks,
                 metrics.ctr,
@@ -110,7 +109,7 @@ def get_ad_group_performance(
     date_range: str = "LAST_30_DAYS",
     limit: int = 50,
 ) -> dict:
-    """Get ad group performance metrics.
+    """Get ad group performance metrics over a date range (aggregated per ad group).
 
     Args:
         customer_id: Google Ads customer ID.
@@ -135,7 +134,6 @@ def get_ad_group_performance(
                 ad_group.id,
                 ad_group.name,
                 ad_group.status,
-                segments.date,
                 metrics.impressions,
                 metrics.clicks,
                 metrics.ctr,
@@ -166,7 +164,7 @@ def get_search_terms_report(
     date_range: str = "LAST_30_DAYS",
     limit: int = 100,
 ) -> dict:
-    """Get search terms that triggered your ads.
+    """Get search terms that triggered your ads (aggregated per search term).
 
     Args:
         customer_id: Google Ads customer ID.
@@ -195,7 +193,6 @@ def get_search_terms_report(
                 ad_group.name,
                 search_term_view.search_term,
                 search_term_view.status,
-                segments.date,
                 metrics.impressions,
                 metrics.clicks,
                 metrics.ctr,
@@ -224,7 +221,7 @@ def get_keyword_performance_report(
     date_range: str = "LAST_30_DAYS",
     limit: int = 100,
 ) -> dict:
-    """Get keyword-level performance metrics.
+    """Get keyword-level performance metrics (aggregated per keyword).
 
     Args:
         customer_id: Google Ads customer ID.
@@ -257,7 +254,6 @@ def get_keyword_performance_report(
                 ad_group_criterion.keyword.text,
                 ad_group_criterion.keyword.match_type,
                 ad_group_criterion.quality_info.quality_score,
-                segments.date,
                 metrics.impressions,
                 metrics.clicks,
                 metrics.ctr,
@@ -285,7 +281,7 @@ def get_account_performance_summary(
     ctx: Context,
     date_range: str = "LAST_30_DAYS",
 ) -> dict:
-    """Get account-level daily performance summary.
+    """Get account-level total performance summary for the given date range.
 
     Args:
         customer_id: Google Ads customer ID.
@@ -294,13 +290,11 @@ def get_account_performance_summary(
     try:
         client = get_client(ctx)
         cid = client.resolve_customer_id(customer_id)
-        where_clauses = []
-        where_clauses.append(build_date_clause(date_range))
+        where_clauses = [build_date_clause(date_range)]
 
         where = " AND ".join(where_clauses)
         query = f"""
             SELECT
-                segments.date,
                 metrics.impressions,
                 metrics.clicks,
                 metrics.ctr,
@@ -314,12 +308,11 @@ def get_account_performance_summary(
                 metrics.interaction_rate
             FROM customer
             WHERE {where}
-            ORDER BY segments.date DESC
         """
         results = execute_query(client, cid, query)
         return success_response(
-            data={"daily_summary": results, "row_count": len(results)},
-            message=f"Account performance: {len(results)} day(s)",
+            data={"summary": results, "row_count": len(results)},
+            message=f"Account performance: {len(results)} summary row(s)",
         )
     except Exception as e:
         return error_response(extract_google_ads_error(e))
