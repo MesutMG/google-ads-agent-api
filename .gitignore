@@ -4,3 +4,5 @@ venv/
 config.json
 GoogleAdsMCP/.git
 google-ads.yaml
+filestructure.tree
+mcp_debug.log
