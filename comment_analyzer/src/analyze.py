@@ -40,6 +40,7 @@ class Analyzer:
             "stream": False,
             "format": "json",
             "options": {"temperature": 0.1},
+            "keep_alive": 0,
         }
         req_timeout = aiohttp.ClientTimeout(total=180)
 

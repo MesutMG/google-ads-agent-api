@@ -1,15 +1,22 @@
 import os
 import json
 import shutil
+import asyncio
 from datetime import date
 from typing import Any, Dict, Optional, Union, List
 from contextlib import AsyncExitStack, asynccontextmanager
 
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+# -- SUBPROJECT IMPORTS --
+from comment_analyzer.src.preprocess import Preprocessor
+from comment_analyzer.src.filter import Filter
+from comment_analyzer.src.analyze import Analyzer
 
 # -- DIRECTORY RESOLUTION & CONFIG --
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -80,7 +87,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# --- Pydantic Models ---
+
+# ==========================================
+# 1. GOOGLE ADS CHAT ENDPOINT
+# ==========================================
+
 class Message(BaseModel):
     role: str
     content: str
@@ -162,3 +173,106 @@ async def chat_with_agent(request: ChatRequest):
         messages=messages_context
     )
     return {"response": final_fallback.choices[0].message.content}
+
+
+# ==========================================
+# 2. COMMENT MODERATION & ANALYSIS ENDPOINT
+# ==========================================
+
+class CommentItem(BaseModel):
+    id: Optional[Union[int, str]] = None
+    comment: str
+    star: Optional[float] = 5.0
+    name: Optional[str] = None
+    email: Optional[str] = None
+    pnr: Optional[str] = None
+
+
+class CommentAnalysisRequest(BaseModel):
+    comments: List[CommentItem]
+    max_llm_rows: Optional[int] = None
+
+
+def correct_star_rating(row: pd.Series) -> float:
+    try:
+        star = float(row.get("star", 1.0))
+    except (ValueError, TypeError):
+        return 1.0
+
+    sentiment = str(row.get("degerlendirme", "")).lower()
+
+    if sentiment == "negatif" and star == 5.0:
+        return 3.0
+    if sentiment == "pozitif" and star in [1.0, 2.0]:
+        return 4.0
+
+    return star
+
+
+def run_comment_pipeline_sync(
+    comments_data: List[Dict[str, Any]], max_rows: Optional[int] = None
+) -> Dict[str, Any]:
+    if not comments_data:
+        return {"total": 0, "approved_count": 0, "records": []}
+
+    df = pd.DataFrame(comments_data)
+
+    # 1. Preprocess (PII & Empty drop)
+    preprocessor = Preprocessor()
+    df = preprocessor.process(df)
+
+    if df.empty:
+        return {"total": 0, "approved_count": 0, "records": []}
+
+    # 2. Static Filter
+    comment_filter = Filter()
+    df_clean, df_flagged = comment_filter.filter(df)
+
+    # 3. LLM Analysis on Clean Rows
+    analyzer = Analyzer()
+    df_analyzed = analyzer.run_pipeline(df_clean, max_rows=max_rows)
+
+    # 4. Fill defaults for statically flagged rows
+    if not df_flagged.empty:
+        df_flagged["degerlendirme"] = "negatif"
+        df_flagged["kategori"] = df_flagged["flag_category"].str.lower()
+        df_flagged["llm_uygunsuz"] = True
+        df_flagged["llm_sebep"] = "Statik kural motoru tarafından engellendi."
+
+    # 5. Combine Datasets
+    df_final = pd.concat([df_analyzed, df_flagged], ignore_index=True)
+
+    # 6. Star Rating Correction
+    if "star" in df_final.columns:
+        df_final["star"] = df_final.apply(correct_star_rating, axis=1)
+
+    # 7. Clean mask
+    clean_mask = (~df_final["is_flagged"].fillna(False)) & (
+        df_final["llm_uygunsuz"].fillna(False) == False
+    )
+
+    all_records = df_final.to_dict(orient="records")
+    approved_records = df_final[clean_mask].to_dict(orient="records")
+
+    return {
+        "success": True,
+        "total_count": len(all_records),
+        "approved_count": len(approved_records),
+        "approved_comments": approved_records,
+        "all_comments": all_records,
+    }
+
+
+@app.post("/comments/analyze")
+async def analyze_comments(request: CommentAnalysisRequest):
+    try:
+        data = [c.model_dump() for c in request.comments]
+        # Run synchronous CPU/network heavy pipeline in background thread
+        result = await asyncio.to_thread(
+            run_comment_pipeline_sync, data, request.max_llm_rows
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Comment analysis failed: {str(e)}"
+        )

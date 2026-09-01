@@ -8,5 +8,8 @@
   "login_customer_id": "YOUR_MCC_ID",
   "client_id": "CLIENT_ID",
   "refresh_token": "REFRESH_TOKEN",
-  "client_secret": "CLIENT_SECRET"
+  "client_secret": "CLIENT_SECRET",
+
+  "ollama_base_url": "OLLAMA_URL",
+  "ollama_model": "OLLAMA_MODEL"
 }
