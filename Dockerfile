@@ -4,7 +4,7 @@ FROM python:3.12-slim
 # Set working directory in the container
 WORKDIR /app
 
-# Install system dependencies (build-essential + git are required for pip git installs)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
@@ -13,13 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install uv globally
 RUN pip install --no-cache-dir uv
 
-# Copy requirements first to leverage Docker cache
+# Copy root requirements first to leverage Docker layer caching
 COPY requirements.txt .
-
-# Install FastAPI dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire project into the container
+# Copy the entire project into the container (including GoogleAdsMCP and comment_analyzer)
 COPY . .
 
 # Pre-build and sync the MCP virtual environment at build time

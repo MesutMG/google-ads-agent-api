@@ -1,16 +1,64 @@
-.git
-.gitignore
-.gitattributes
-__pycache__
+# Virtual Environments
 venv/
 .venv/
-*.pyc
-*.log
-config.json
+env/
+.env/
 
+# Python Cache and Compiled Files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Logs and Debugging
+*.log
+mcp_debug.log
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Tests and Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Example configs / Documentation / Scripts
+config_example.json
+comment_analyzer/config_example.json
+filestructure.tree
+comment_analyzer/filestructure.tree
+uninstall.bash
+test_api.sh
+generate_refresh_token.py
+main_mcp_logger.py
+README.md
+comment_analyzer/README.md
+GoogleAdsMCP/README.md
+GoogleAdsMCP/CLAUDE.md
+GoogleAdsMCP/CONTRIBUTING.md
+GoogleAdsMCP/SECURITY.md
+GoogleAdsMCP/plans/
+GoogleAdsMCP/tests/
+GoogleAdsMCP/.git/
 GoogleAdsMCP/.env
 GoogleAdsMCP/.venv/
 GoogleAdsMCP/.pytest_cache/
-GoogleAdsMCP/.claude/
-GoogleAdsMCP/tests/
-GoogleAdsMCP/.git/
+
+# Local Data (Prevent copying local test datasets into production)
+comment_analyzer/data/
