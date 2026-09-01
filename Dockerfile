@@ -22,8 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire project into the container
 COPY . .
 
-# Expose the port Uvicorn runs on
-RUN pip install --no-cache-dir -e ./GoogleAdsMCP
+# Pre-build and sync the MCP virtual environment at build time
+RUN cd GoogleAdsMCP && uv sync --frozen
+
 EXPOSE 6161
 
 # Command to run the FastAPI application
