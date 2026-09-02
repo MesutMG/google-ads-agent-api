@@ -1,12 +1,12 @@
-import yaml
+import json
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 # Load OAuth client credentials directly from your google-ads.yaml file
-with open("google-ads.yaml", "r") as f:
-    yaml_config = yaml.safe_load(f)
+with open("config.json", "r") as f:
+    config = json.load(f)
 
-CLIENT_ID = yaml_config.get("client_id")
-CLIENT_SECRET = yaml_config.get("client_secret")
+CLIENT_ID = config.get("client_id")
+CLIENT_SECRET = config.get("client_secret")
 
 # Scope required for Google Ads API
 SCOPES = ["https://www.googleapis.com/auth/adwords"]

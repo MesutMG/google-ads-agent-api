@@ -100,6 +100,42 @@ class ChatRequest(BaseModel):
     account_no: Union[str, int]
     messages: List[Message]
 
+
+# ==============================================================================
+# Example Request Body (JSON):
+# {
+#   "account_no": "1234567890",  // Required (string | int) - Google Ads Customer ID
+#   "messages": [                // Required (array of message objects)
+#     {
+#       "role": "user",          // Required: "user" | "assistant"
+#       "content": "Son 30 günde en çok harcama yapan kampanyaları listele."
+#     }
+#     // For continuing conversations, append previous assistant/user turns:
+#     // ,
+#     // {
+#     //   "role": "assistant",
+#     //   "content": "<p>Son 30 günde en çok harcama yapan ka...</p>"
+#     // },
+#     // {
+#     //   "role": "user",
+#     //   "content": "Peki bu kampanyanın ortalama CPC değeri nedir?"
+#     // }
+#   ]
+# }
+#
+# Example Usage in Laravel:
+# $response = Http::timeout(120)->post('http://localhost:6161/chat', [
+#     'account_no' => '1234567890',
+#     'messages' => [
+#         [
+#             'role' => 'user',
+#             'content' => 'Oltalı kampanyasının son 30 günlük verilerini analiz et.'
+#         ]
+#     ]
+# ]);
+#
+# $htmlOutput = $response->json('response');
+
 @app.post("/chat")
 async def chat_with_agent(request: ChatRequest):
     if not mcp_session or not openai_client:
@@ -262,6 +298,42 @@ def run_comment_pipeline_sync(
         "all_comments": all_records,
     }
 
+
+# ==============================================================================
+# Example Request Body (JSON):
+# {
+#   "max_llm_rows": 50,  // Optional (int or null)
+#   "comments": [
+#     {
+#       "id": 101,                                       // Optional (int | string)
+#       "comment": "Otobüs çok temizdi.",                // Required (string)
+#       "star": 5.0,                                     // Optional (default: 5.0)
+#       "name": "Ahmet Yılmaz",                          // Optional (string)
+#       "email": "ahmet@example.com",                    // Optional (string)
+#       "pnr": "PNR12345"                                // Optional (string)
+#     },
+#     {
+#       "id": 102,
+#       "comment": "Şoför çok kabaydı ve araç pisti.",
+#       "star": 1.0
+#     }
+#   ]
+# }
+#
+# Example Usage in Laravel:
+# $response = Http::post('http://localhost:6161/comments/analyze', [
+#     'max_llm_rows' => 50, // optional
+#     'comments' => [
+#         [
+#             'id' => $comment->id,
+#             'comment' => $comment->body,
+#             'star' => $comment->rating,
+#             'name' => $comment->user_name, // optional
+#             'email' => $comment->user_email, // optional
+#             'pnr' => $comment->pnr // optional
+#         ]
+#     ]
+# ]);
 
 @app.post("/comments/analyze")
 async def analyze_comments(request: CommentAnalysisRequest):
