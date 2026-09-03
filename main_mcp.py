@@ -275,6 +275,11 @@ def run_comment_pipeline_sync(
         df_flagged["llm_uygunsuz"] = True
         df_flagged["llm_sebep"] = "Statik kural motoru tarafından engellendi."
 
+    # prevent missing columns to be NaN in clean rows
+    if not df_analyzed.empty:
+        df_analyzed["is_flagged"] = False
+        df_analyzed["flag_category"] = None
+
     # 5. Combine Datasets
     df_final = pd.concat([df_analyzed, df_flagged], ignore_index=True)
 
@@ -287,8 +292,11 @@ def run_comment_pipeline_sync(
         df_final["llm_uygunsuz"].fillna(False) == False
     )
 
+    # keeps the nan as none for pandas
+    df_final = df_final.where(pd.notnull(df_final), None)
+
     all_records = df_final.to_dict(orient="records")
-    approved_records = df_final[clean_mask].to_dict(orient="records")
+    approved_records = [r for r in all_records if r.get("id") in df_final[clean_mask]["id"].values]
 
     return {
         "success": True,
@@ -345,6 +353,8 @@ async def analyze_comments(request: CommentAnalysisRequest):
         )
         return result
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500, detail=f"Comment analysis failed: {str(e)}"
         )
