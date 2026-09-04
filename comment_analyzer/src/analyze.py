@@ -6,14 +6,19 @@ import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
-if not os.path.exists(CONFIG_PATH):
-    CONFIG_PATH = "config.json"
-    
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    config = json.load(f)
+config = {}
+if os.path.exists(CONFIG_PATH):
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        config = json.load(f)
 
-OLLAMA_URL = config.get("ollama_url", "http://localhost:11434/api/generate")
-MODEL_NAME = config.get("model_name", "qwen2.5:3b")
+OLLAMA_URL = os.getenv(
+    "OLLAMA_BASE_URL", 
+    config.get("ollama_url", "http://localhost:11434/api/generate")
+)
+if not OLLAMA_URL.endswith("/api/generate"):
+    OLLAMA_URL = f"{OLLAMA_URL.rstrip('/')}/api/generate"
+    
+MODEL_NAME = os.getenv("OLLAMA_MODEL",config.get("model_name", "qwen2.5:3b"))
 
 
 # Pydantic Validation Schema
@@ -61,7 +66,7 @@ class Analyzer:
             "stream": False,
             "format": "json",
             "options": {"temperature": 0.1},
-            "keep_alive": 0,
+            "keep_alive": "5m",
         }
         req_timeout = aiohttp.ClientTimeout(total=180)
 
@@ -90,7 +95,7 @@ class Analyzer:
             return AnalysisResult(
                 degerlendirme="hata",
                 kategori="hata",
-                llm_uygunsuz=False,
+                llm_uygunsuz=True,
                 llm_sebep=err_detail,
             )
 

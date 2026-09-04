@@ -1,4 +1,22 @@
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      # This saves your models locally so you don't re-download them every time
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # If you have an NVIDIA GPU, uncomment the lines below to enable hardware acceleration:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
   google-ads-agent-api:
     build:
       context: .
@@ -10,8 +28,11 @@ services:
       - "6161:6161"
     volumes:
       - ./config.json:/app/config.json:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      - ollama
     environment:
       - PYTHONUNBUFFERED=1
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://ollama:11434
+
+volumes:
+  ollama_data:
