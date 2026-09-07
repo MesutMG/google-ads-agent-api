@@ -8,6 +8,7 @@ __pycache__/
 dist/
 build/
 .eggs/
+.python-version
 
 # Virtual environments
 .venv/
@@ -51,4 +52,4 @@ htmlcov/
 Thumbs.db
 
 # uv
-
+uv.lock

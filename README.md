@@ -1,17 +1,19 @@
-# Google Ads MCP Agent API (`google-ads-agent-api`)
+# Google Ads MCP Agent API & Comment Analyzer
 
-A containerized **FastAPI** microservice that wraps the **Google Ads Model Context Protocol (MCP)** server over `stdio` and connects to **OpenAI GPT-4o** for multi-turn conversational querying, performance analysis, and automated insights.
+A containerized microservice running **FastAPI**, wrapping the **Google Ads Model Context Protocol (MCP)** server over `stdio` and integrating **Ollama** for local comment moderation and analysis alongside OpenAI GPT-4o for ad queries.
 
----
+
 
 ## System Requirements
 
-* **Docker & Docker Compose** (Recommended for production/server)
-* *OR* **Python 3.12+** and **[`uv`](https://docs.astral.sh/uv/)** (for local development)
+* **Docker & Docker Compose** (Recommended)
+* *OR* **Python 3.12+**, **[`uv`](https://docs.astral.sh/uv/)**, and local **[Ollama](https://ollama.ai/)** (for local development)
 
----
+
 
 ## Credentials Configuration
+
+You must create `config.json` **before** starting the Docker containers to prevent Docker from mounting an empty directory.
 
 1. Create a configuration file from the template:
 ```bash
@@ -33,62 +35,83 @@ cp config_example.json config.json
 
 
 
----
+## Deployment (Docker Compose)
 
-## Production Deployment (Docker Compose)
+### 1. Build and Start the Services
 
-### 1. Build and Run
-
+Run Docker Compose in detached mode:
 ```bash
 docker compose up -d --build
 ```
 
+**What this does:**
+
+1. `ollama` starts on port `11434`.
+2. `ollama-pull` waits for Ollama to become healthy, downloads `qwen2.5:3b`, and exits cleanly.
+3. `google-ads-agent-api` starts on port `6161` once the model pull completes successfully.
+
 ### 2. View Live Logs
 
+Monitor all services or track individual containers:
+
 ```bash
+# All service logs
 docker compose logs -f
+
+# Watch model download progress
+docker compose logs -f ollama-pull
+
+# API application logs
+docker compose logs -f google-ads-agent-api
 ```
 
-### 3. Stop or Uninstall
+### 3. Stop or Reset
 
-To stop the service and wipe the container, image, and cache:
+Stop containers:
+```bash
+docker compose down
+```
+
+Wipe containers, cached models, images, and volumes:
 
 ```bash
+# Clean deinstallation from scratch including the model:
+docker compose down -v
+
+# Or use the uninstall script:
 chmod +x uninstall.bash
 ./uninstall.bash
 ```
 
----
+
 
 ## Local Development (Without Docker)
 
-1. Create a virtual environment and install dependencies:
+1. Ensure Ollama is installed locally and pull the model:
+
+```bash
+ollama run qwen2.5:3b
+```
+
+2. Create a virtual environment and install dependencies:
 ```bash
 uv venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install -r requirements.txt
 ```
 
-
-2. Start the Uvicorn development server:
+3. Start the Uvicorn development server:
 ```bash
 uvicorn main_mcp:app --host 0.0.0.0 --port 6161 --reload
 ```
 
 
 
----
-
 ## API Reference
 
 The service runs on port `6161`. Interactive Swagger documentation is available at `http://localhost:6161/docs`.
 
-* **`POST /chat`**: Main OpenAI iterative agent endpoint.
-* **Payload:** `{"prompt": "Ağustos ayında en çok harcama yapan kampanyalar hangileri?"}`
-
-
-* **`POST /execute-tool`**: Direct execution of a Google Ads MCP tool without AI interpretation.
-* **Payload:** `{"tool_name": "list_campaigns", "arguments": {}}`
-
-
+* **`POST /comments/analyze`**: Batch moderation and sentiment analysis for customer comments via Ollama (`qwen2.5:3b`).
+* **`POST /chat`**: OpenAI agent querying Google Ads data via MCP tools.
+* **`POST /execute-tool`**: Direct execution of a Google Ads MCP tool without LLM interpretation.
 * **`GET /tools`**: Lists all exposed Google Ads MCP tools and JSON parameter schemas.

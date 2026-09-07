@@ -40,6 +40,8 @@ tests/
 
 # Example configs / Documentation / Scripts
 config_example.json
+config.json
+configFiles/
 comment_analyzer/config_example.json
 filestructure.tree
 comment_analyzer/filestructure.tree

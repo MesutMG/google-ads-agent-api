@@ -14,4 +14,8 @@ docker rmi -f google-ads-agent-api 2>/dev/null || true
 echo "==> Pruning build caches..."
 docker builder prune -f
 
-echo "==> Cleanup complete. Everything related to google-ads-agent-api has been removed."
+echo "==> Removing generated local files (config.json, logs, caches)..."
+rm -f mcp_debug.log
+rm -rf .pytest_cache __pycache__ */__pycache__ */*/__pycache__
+
+echo "==> Cleanup complete. Docker artifacts, qwen2.5:3b model, and generated files removed."
