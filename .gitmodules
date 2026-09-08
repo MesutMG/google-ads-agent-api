@@ -1,0 +1,4 @@
+[submodule "GoogleAdsMCP"]
+	branch = main
+[submodule "comment_analyzer"]
+	branch = main
