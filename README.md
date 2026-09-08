@@ -6,21 +6,47 @@ A containerized microservice running **FastAPI**, wrapping the **Google Ads Mode
 
 ## System Requirements
 
+* **Git**
 * **Docker & Docker Compose** (Recommended)
 * *OR* **Python 3.12+**, **[`uv`](https://docs.astral.sh/uv/)**, and local **[Ollama](https://ollama.ai/)** (for local development)
 
 
 
-## Credentials Configuration
+## 1. Clone the Repository (With Submodules)
 
-You must create `config.json` **before** starting the Docker containers to prevent Docker from mounting an empty directory.
+This project contains Git submodules (`GoogleAdsMCP` and `comment_analyzer`). You must clone with the `--recurse-submodules` flag so the dependencies are populated:
 
-1. Create a configuration file from the template:
+```bash
+git clone --recurse-submodules <REPOSITORY_URL>
+cd <PROJECT_DIR>
+```
+
+If you already cloned the repository without submodules, initialize and fetch them before proceeding:
+
+```bash
+git submodule update --init --recursive
+```
+
+To pull the latest changes alongside submodule updates later:
+
+```bash
+git pull --recurse-submodules
+```
+
+
+
+## 2. Credentials Configuration
+
+Create `config.json` in the root directory before starting the containers:
+
+1. Copy the example configuration:
+
 ```bash
 cp config_example.json config.json
 ```
 
-2. Open `config.json` and insert your credentials:
+2. Add your credentials to `config.json`:
+
 ```json
 {
   "developer_token": "YOUR_DEVELOPER_TOKEN",
@@ -35,22 +61,22 @@ cp config_example.json config.json
 
 
 
-## Deployment (Docker Compose)
+## 3. Deployment (Docker Compose)
 
-### 1. Build and Start the Services
+### Build and Start
 
 Run Docker Compose in detached mode:
 ```bash
 docker compose up -d --build
 ```
 
-**What this does:**
+**Automated Lifecycle:**
 
 1. `ollama` starts on port `11434`.
-2. `ollama-pull` waits for Ollama to become healthy, downloads `qwen2.5:3b`, and exits cleanly.
-3. `google-ads-agent-api` starts on port `6161` once the model pull completes successfully.
+2. `ollama-pull` waits for Ollama to become healthy, pulls `qwen2.5:3b`, and exits.
+3. `google-ads-agent-api` installs the local submodule dependency (`GoogleAdsMCP`) and starts on port `6161` once model provisioning completes.
 
-### 2. View Live Logs
+### View Live Logs
 
 Monitor all services or track individual containers:
 
@@ -58,54 +84,63 @@ Monitor all services or track individual containers:
 # All service logs
 docker compose logs -f
 
-# Watch model download progress
+# Track model download progress
 docker compose logs -f ollama-pull
 
 # API application logs
 docker compose logs -f google-ads-agent-api
 ```
 
-### 3. Stop or Reset
+### Stop or Reset
 
 Stop containers:
 ```bash
 docker compose down
 ```
 
-Wipe containers, cached models, images, and volumes:
+Wipe containers, cached models, volumes, and temporary local files:
 
 ```bash
-# Clean deinstallation from scratch including the model:
+# Clean deinstallation from scratch (clears models and volumes):
 docker compose down -v
 
-# Or use the uninstall script:
+# Or run the cleanup script:
 chmod +x uninstall.bash
 ./uninstall.bash
 ```
 
 
 
-## Local Development (Without Docker)
+## 4. Local Development (Without Docker)
 
-1. Ensure Ollama is installed locally and pull the model:
+1. Ensure Ollama is running locally and pull the target model:
 
 ```bash
 ollama run qwen2.5:3b
 ```
 
-2. Create a virtual environment and install dependencies:
+2. Verify submodules are populated:
+
+```bash
+git submodule update --init --recursive
+
+```
+
+3. Create a virtual environment and install dependencies:
+
 ```bash
 uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 uv pip install -r requirements.txt
 ```
 
-3. Start the Uvicorn development server:
+4. Start the development server:
+
 ```bash
 uvicorn main_mcp:app --host 0.0.0.0 --port 6161 --reload
 ```
 
-
+---
 
 ## API Reference
 

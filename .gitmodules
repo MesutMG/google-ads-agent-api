@@ -1,4 +1,8 @@
 [submodule "GoogleAdsMCP"]
 	branch = main
+	path = GoogleAdsMCP
+	url = https://github.com/MesutMG/GoogleAdsMCP_forChatGPT.git
 [submodule "comment_analyzer"]
 	branch = main
+	path = comment_analyzer
+	url = https://github.com/MesutMG/commentAnalysis.git
