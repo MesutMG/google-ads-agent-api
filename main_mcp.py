@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import shutil
 import asyncio
@@ -100,6 +101,15 @@ class ChatRequest(BaseModel):
     account_no: Union[str, int]
     messages: List[Message]
 
+def clean_html_response(content: Optional[str]) -> str:
+    if not content:
+        return ""
+    text = content.strip()
+    # Strip markdown block wrappers like ```html ... ``` or ``` ... ```
+    text = re.sub(r"^```(?:html)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
 
 # ==============================================================================
 # Example Request Body (JSON):
@@ -180,7 +190,7 @@ async def chat_with_agent(request: ChatRequest):
         message = choice.message
 
         if not message.tool_calls:
-            return {"response": message.content}
+            return {"response": clean_html_response(message.content)}
 
         messages_context.append(message.model_dump(exclude_none=True))
 
@@ -208,7 +218,7 @@ async def chat_with_agent(request: ChatRequest):
         model="gpt-4o",
         messages=messages_context
     )
-    return {"response": final_fallback.choices[0].message.content}
+    return {"response": clean_html_response(final_fallback.choices[0].message.content)}
 
 
 # ==========================================
