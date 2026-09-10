@@ -44,6 +44,18 @@ class Filter:
                 r"\bwww\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b",
                 r"\b[a-zA-Z0-9.-]+\.(?:com|net|org|com\.tr|gen\.tr|info|biz|site|online|store|xyz)\b(?:\/[^\s]*)?",
             ],
+            "PLATFORM_KEYWORDS": [
+                r'bilet\.?com',
+                r'\buygulama(dan|da|ya|yı)?\b',
+                r'aplikasyon',
+                r'web\s*sitesi',
+                r'kart[ıi]mdan',
+                r'para\s*çekt[iı]',
+                r'\biade\b',
+                r'm[üu]şteri\s*hizmetleri',
+                r'çağr[ıi]\s*merkezi',
+                r'check-?[iı]n(\s*hatas[ıi])?',
+            ],
             "SPAM": [
                 r"^(test|testing|deneme)(\s*\d+)*$",
                 r"^(.)\1{4,}$",  # 'aaaaa', '.....' gibi anlamsız karakter tekrarları

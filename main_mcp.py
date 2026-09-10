@@ -1,12 +1,14 @@
 import os
 import re
 import json
+import math
 import shutil
 import asyncio
 from datetime import date
 from typing import Any, Dict, Optional, Union, List
 from contextlib import AsyncExitStack, asynccontextmanager
 
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -238,12 +240,26 @@ class CommentAnalysisRequest(BaseModel):
     comments: List[CommentItem]
     max_llm_rows: Optional[int] = None
 
+def sanitize_float(val: Any, default: float = 5.0) -> float:
+    if val is None or pd.isna(val):
+        return default
+    try:
+        f = float(val)
+        return default if math.isnan(f) else f
+    except (ValueError, TypeError):
+        return default
 
 def correct_star_rating(row: pd.Series) -> float:
-    try:
-        star = float(row.get("star", 1.0))
-    except (ValueError, TypeError):
-        return 1.0
+    val = row.get("star", 1.0)
+    if val is None or pd.isna(val):
+        star = 1.0
+    else:
+        try:
+            star = float(val)
+            if math.isnan(star):
+                star = 1.0
+        except (ValueError, TypeError):
+            star = 1.0
 
     sentiment = str(row.get("degerlendirme", "")).lower()
 
@@ -259,7 +275,13 @@ def run_comment_pipeline_sync(
     comments_data: List[Dict[str, Any]], max_rows: Optional[int] = None
 ) -> Dict[str, Any]:
     if not comments_data:
-        return {"total": 0, "approved_count": 0, "records": []}
+        return {
+            "success": True,
+            "total_count": 0,
+            "approved_count": 0,
+            "approved_comments": [],
+            "all_comments": [],
+        }
 
     df = pd.DataFrame(comments_data)
 
@@ -268,7 +290,13 @@ def run_comment_pipeline_sync(
     df = preprocessor.process(df)
 
     if df.empty:
-        return {"total": 0, "approved_count": 0, "records": []}
+        return {
+            "success": True,
+            "total_count": 0,
+            "approved_count": 0,
+            "approved_comments": [],
+            "all_comments": [],
+        }
 
     # 2. Static Filter
     comment_filter = Filter()
@@ -276,37 +304,59 @@ def run_comment_pipeline_sync(
 
     # 3. LLM Analysis on Clean Rows
     analyzer = Analyzer()
-    df_analyzed = analyzer.run_pipeline(df_clean, max_rows=max_rows)
+    df_analyzed = (
+        analyzer.run_pipeline(df_clean, max_rows=max_rows)
+        if not df_clean.empty
+        else pd.DataFrame()
+    )
 
     # 4. Fill defaults for statically flagged rows
     if not df_flagged.empty:
+        df_flagged = df_flagged.copy()
         df_flagged["degerlendirme"] = "negatif"
-        df_flagged["kategori"] = df_flagged["flag_category"].str.lower()
+        df_flagged["kategori"] = df_flagged["flag_category"].astype(str).str.lower()
         df_flagged["llm_uygunsuz"] = True
         df_flagged["llm_sebep"] = "Statik kural motoru tarafından engellendi."
 
-    # prevent missing columns to be NaN in clean rows
+    # Prevent missing columns from remaining undefined in clean rows
     if not df_analyzed.empty:
+        df_analyzed = df_analyzed.copy()
         df_analyzed["is_flagged"] = False
         df_analyzed["flag_category"] = None
 
     # 5. Combine Datasets
     df_final = pd.concat([df_analyzed, df_flagged], ignore_index=True)
 
+    if df_final.empty:
+        return {
+            "success": True,
+            "total_count": 0,
+            "approved_count": 0,
+            "approved_comments": [],
+            "all_comments": [],
+        }
+
     # 6. Star Rating Correction
     if "star" in df_final.columns:
         df_final["star"] = df_final.apply(correct_star_rating, axis=1)
 
-    # 7. Clean mask
-    clean_mask = (~df_final["is_flagged"].fillna(False)) & (
-        df_final["llm_uygunsuz"].fillna(False) == False
-    )
+    # 7. Clean Mask Determination
+    is_not_flagged = ~df_final["is_flagged"].fillna(False).astype(bool)
+    is_not_llm_uygunsuz = ~df_final["llm_uygunsuz"].fillna(False).astype(bool)
+    clean_mask = is_not_flagged & is_not_llm_uygunsuz
 
-    # keeps the nan as none for pandas
-    df_final = df_final.where(pd.notnull(df_final), None)
+    approved_ids = set(df_final.loc[clean_mask, "id"].dropna().tolist())
 
+    # 8. Sanitize NaN values to None for complete JSON compliance
+    df_final = df_final.astype(object).where(pd.notnull(df_final), None)
     all_records = df_final.to_dict(orient="records")
-    approved_records = [r for r in all_records if r.get("id") in df_final[clean_mask]["id"].values]
+
+    for record in all_records:
+        for k, v in record.items():
+            if isinstance(v, float) and math.isnan(v):
+                record[k] = None
+
+    approved_records = [r for r in all_records if r.get("id") in approved_ids]
 
     return {
         "success": True,

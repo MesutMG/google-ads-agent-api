@@ -65,7 +65,11 @@ class Analyzer:
             "prompt": self.PROMPT_TEMPLATE.format(comment=comment),
             "stream": False,
             "format": "json",
-            "options": {"temperature": 0.1},
+            "options": {
+                "temperature": 0.1,
+                "num_predict": 100,
+                "num_ctx": 1024,
+            },
             "keep_alive": "5m",
         }
         req_timeout = aiohttp.ClientTimeout(total=180)
@@ -106,7 +110,7 @@ class Analyzer:
             return df_target
 
         # Limit concurrent calls so local Ollama doesn't overload or timeout
-        semaphore = asyncio.Semaphore(4)
+        semaphore = asyncio.Semaphore(1)
 
         async with aiohttp.ClientSession() as session:
             async def run_task(text: str):
